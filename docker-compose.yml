@@ -1,0 +1,103 @@
+# ============================================================
+# X-to-DingTalk 生产部署 (自建 RSSHub + Redis + Browserless)
+# ============================================================
+# 端口说明:
+#   - 仅 RSSHub 可选暴露到宿主机(调试用)，其余服务均在 Docker 内网通信
+#   - 转发服务通过 http://rsshub:1200 内网访问 RSSHub，无需暴露端口
+#   - 如宿主机 1200 端口被占用，改为 "1201:1200" 即可(仅影响外部访问)
+# ============================================================
+# 部署步骤:
+#   1. cp .env.example .env  并填入 Twitter Cookie
+#   2. cp config.example.json config.json  并填入钉钉和监控账号
+#   3. docker-compose up -d
+#   4. docker-compose logs -f x-to-dingtalk  查看日志
+# ============================================================
+
+services:
+  # =========================================================
+  # RSSHub - 将 X/Twitter 推文转为 RSS 订阅源
+  # =========================================================
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: rsshub
+    restart: always
+    # 端口映射: 仅调试时需要(浏览器访问 http://服务器IP:1200)
+    # 生产环境可注释掉，转发服务走 Docker 内网不受影响
+    # 如 1200 被占用，改为 "1201:1200"
+    ports:
+      - "1200:1200"
+    environment:
+      - NODE_ENV=production
+      # Redis 缓存 (生产环境必需，减少重复请求被封风险)
+      - CACHE_TYPE=redis
+      - REDIS_URL=redis://redis:6379/
+      - CACHE_EXPIRE=600
+      # 浏览器服务 (Twitter 路由需要)
+      - PUPPETEER_WS_ENDPOINT=ws://browserless:3000
+      # Twitter/X 认证 (必填，从 .env 文件读取)
+      - TWITTER_COOKIE=${TWITTER_COOKIE:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+      browserless:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:1200/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # =========================================================
+  # Redis - RSSHub 缓存后端
+  # =========================================================
+  redis:
+    image: redis:alpine
+    container_name: rsshub-redis
+    restart: always
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 5s
+
+  # =========================================================
+  # Browserless - 无头浏览器 (Twitter 路由渲染需要)
+  # =========================================================
+  browserless:
+    image: browserless/chrome
+    container_name: rsshub-browserless
+    restart: always
+    ulimits:
+      core:
+        hard: 0
+        soft: 0
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/pressure"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # =========================================================
+  # X-to-DingTalk - 推文转发服务
+  # =========================================================
+  x-to-dingtalk:
+    build: .
+    container_name: x-to-dingtalk
+    restart: always
+    depends_on:
+      rsshub:
+        condition: service_healthy
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./data:/app/data
+    environment:
+      # 使用同一 Docker 网络内的 RSSHub 实例
+      - RSSHUB_URL=http://rsshub:1200
+
+volumes:
+  redis-data:

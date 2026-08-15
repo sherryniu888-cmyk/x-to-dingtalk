@@ -1,0 +1,19 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# 安装依赖
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 复制源码
+COPY main.py .
+
+# 创建数据目录
+RUN mkdir -p /app/data
+
+# 持久化状态文件
+VOLUME ["/app/data", "/app/config.json"]
+
+# 默认守护进程模式运行
+CMD ["python", "main.py"]

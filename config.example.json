@@ -1,0 +1,41 @@
+{
+  "_说明": "X(Twitter)博主发文转发到钉钉群 - 配置文件。复制本文件为 config.json 后修改",
+
+  "_RSSHub配置": "RSSHub 实例地址。可使用公共实例 https://rsshub.app，或自建实例 http://rsshub:1200(配合docker-compose)",
+  "rsshub_url": "https://rsshub.app",
+
+  "_账号列表": "要监控的X博主。简单模式直接填用户名字符串，高级模式用对象指定显示名和自定义RSS地址",
+  "accounts": [
+    "elonmusk",
+    {
+      "username": "NASA",
+      "display_name": "NASA",
+      "rss_url": "https://rsshub.app/twitter/user/NASA"
+    }
+  ],
+
+  "_钉钉配置": "钉钉自定义机器人Webhook、加签密钥和安全关键词",
+  "dingtalk": {
+    "webhook": "https://oapi.dingtalk.com/robot/send?access_token=YOUR_ACCESS_TOKEN",
+    "secret": "",
+    "keyword": "DT"
+  },
+
+  "_轮询间隔": "检查新推文的间隔(分钟)，建议 3-10 分钟",
+  "poll_interval_minutes": 5,
+
+  "_首次运行": "首次运行时是否发送历史推文。false=只记录不发送(推荐)，true=发送所有历史推文",
+  "send_on_first_run": false,
+
+  "_状态文件": "记录已转发推文ID的文件路径，用于去重",
+  "state_file": "data/state.json",
+
+  "_状态保留": "每个账号最多保留的已见推文ID数量，防止状态文件无限增长",
+  "max_state_entries": 200,
+
+  "_消息样式": "钉钉消息类型: markdown(推荐) 或 link",
+  "message_type": "markdown",
+
+  "_代理": "HTTP代理地址，国内本地测试时填VPN代理(如 http://127.0.0.1:7890)，海外服务器留空",
+  "proxy": ""
+}
