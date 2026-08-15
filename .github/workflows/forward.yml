@@ -15,15 +15,31 @@ concurrency:
 jobs:
   forward:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check secrets
+        env:
+          TWITTER_COOKIE: ${{ secrets.TWITTER_COOKIE }}
+          DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+          DINGTALK_KEYWORD: ${{ secrets.DINGTALK_KEYWORD }}
+          TWITTER_ACCOUNTS: ${{ secrets.TWITTER_ACCOUNTS }}
+        run: |
+          echo "Checking secrets..."
+          [ -n "$TWITTER_COOKIE" ] && echo "TWITTER_COOKIE: OK" || echo "TWITTER_COOKIE: MISSING!"
+          [ -n "$DINGTALK_WEBHOOK" ] && echo "DINGTALK_WEBHOOK: OK" || echo "DINGTALK_WEBHOOK: MISSING!"
+          [ -n "$DINGTALK_KEYWORD" ] && echo "DINGTALK_KEYWORD: OK" || echo "DINGTALK_KEYWORD: MISSING!"
+          [ -n "$TWITTER_ACCOUNTS" ] && echo "TWITTER_ACCOUNTS: OK ($TWITTER_ACCOUNTS)" || echo "TWITTER_ACCOUNTS: MISSING!"
+
+      - name: Create Docker network
+        run: docker network create rss-net
+
       - name: Start Browserless
         run: |
           docker run -d --name browserless \
-            -p 3000:3000 \
+            --network rss-net \
             --shm-size=1gb \
             browserless/chrome
 
@@ -32,12 +48,13 @@ jobs:
           TWITTER_COOKIE: ${{ secrets.TWITTER_COOKIE }}
         run: |
           docker run -d --name rsshub \
+            --network rss-net \
             -e TWITTER_COOKIE="$TWITTER_COOKIE" \
-            -e PUPPETEER_WS_ENDPOINT=ws://host.docker.internal:3000 \
+            -e PUPPETEER_WS_ENDPOINT=ws://browserless:3000 \
             -p 1200:1200 \
             diygod/rsshub:latest
 
-      - name: Wait for RSSHub
+      - name: Wait for services
         run: |
           echo "Waiting for Browserless..."
           for i in $(seq 1 30); do
@@ -51,13 +68,22 @@ jobs:
           for i in $(seq 1 30); do
             if curl -sf http://localhost:1200/healthz > /dev/null 2>&1; then
               echo "RSSHub is ready (attempt $i)"
-              exit 0
+              break
             fi
             sleep 2
           done
-          echo "RSSHub failed to start, logs:"
-          docker logs rsshub
-          exit 1
+          echo "=== RSSHub logs ==="
+          docker logs rsshub 2>&1 | tail -30
+
+      - name: Test RSSHub Twitter route
+        run: |
+          echo "Testing Twitter route for alpha123cc..."
+          HTTP_CODE=$(curl -s -o /tmp/rss_output -w "%{http_code}" "http://localhost:1200/twitter/user/alpha123cc")
+          echo "HTTP status: $HTTP_CODE"
+          echo "Response (first 500 chars):"
+          head -c 500 /tmp/rss_output
+          echo ""
+          echo "=== If HTTP 403/404, Twitter cookie may be expired ==="
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -98,6 +124,7 @@ jobs:
           with open('config.json', 'w') as f:
               json.dump(config, f, indent=2, ensure_ascii=False)
           print('config.json created')
+          print('Accounts:', config['accounts'])
           "
 
       - name: Run forwarder
@@ -122,3 +149,4 @@ jobs:
         run: |
           docker stop rsshub 2>/dev/null || true
           docker stop browserless 2>/dev/null || true
+          docker network rm rss-net 2>/dev/null || true
