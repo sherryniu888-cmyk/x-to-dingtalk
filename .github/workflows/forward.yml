@@ -85,9 +85,11 @@ jobs:
           echo "Testing Twitter route for alpha123cc..."
           HTTP_CODE=$(curl -s -o /tmp/rss_output -w "%{http_code}" "http://localhost:1200/twitter/user/alpha123cc")
           echo "HTTP status: $HTTP_CODE"
-          echo "Response (first 500 chars):"
-          head -c 500 /tmp/rss_output
+          echo "Response, HTML tags stripped (first 3000 chars):"
+          sed -e 's/<[^>]*>/ /g' /tmp/rss_output | tr -s ' \t\n' ' ' | head -c 3000
           echo ""
+          echo "=== RSSHub container logs (post-request) ==="
+          docker logs rsshub 2>&1 | tail -60
           if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
             echo "::error::Twitter cookie appears to be expired or invalid (HTTP $HTTP_CODE). Update the TWITTER_COOKIE secret."
             exit 1
