@@ -28,10 +28,15 @@ jobs:
           TWITTER_ACCOUNTS: ${{ secrets.TWITTER_ACCOUNTS }}
         run: |
           echo "Checking secrets..."
-          [ -n "$TWITTER_COOKIE" ] && echo "TWITTER_COOKIE: OK" || echo "TWITTER_COOKIE: MISSING!"
-          [ -n "$DINGTALK_WEBHOOK" ] && echo "DINGTALK_WEBHOOK: OK" || echo "DINGTALK_WEBHOOK: MISSING!"
-          [ -n "$DINGTALK_KEYWORD" ] && echo "DINGTALK_KEYWORD: OK" || echo "DINGTALK_KEYWORD: MISSING!"
-          [ -n "$TWITTER_ACCOUNTS" ] && echo "TWITTER_ACCOUNTS: OK ($TWITTER_ACCOUNTS)" || echo "TWITTER_ACCOUNTS: MISSING!"
+          MISSING=0
+          [ -n "$TWITTER_COOKIE" ] && echo "TWITTER_COOKIE: OK" || { echo "::error::TWITTER_COOKIE is MISSING!"; MISSING=1; }
+          [ -n "$DINGTALK_WEBHOOK" ] && echo "DINGTALK_WEBHOOK: OK" || { echo "::error::DINGTALK_WEBHOOK is MISSING!"; MISSING=1; }
+          [ -n "$DINGTALK_KEYWORD" ] && echo "DINGTALK_KEYWORD: OK" || { echo "::error::DINGTALK_KEYWORD is MISSING!"; MISSING=1; }
+          [ -n "$TWITTER_ACCOUNTS" ] && echo "TWITTER_ACCOUNTS: OK ($TWITTER_ACCOUNTS)" || { echo "::error::TWITTER_ACCOUNTS is MISSING!"; MISSING=1; }
+          if [ "$MISSING" -eq 1 ]; then
+            echo "::error::Required secret(s) missing, aborting before any containers are started."
+            exit 1
+          fi
 
       - name: Create Docker network
         run: docker network create rss-net
@@ -83,7 +88,14 @@ jobs:
           echo "Response (first 500 chars):"
           head -c 500 /tmp/rss_output
           echo ""
-          echo "=== If HTTP 403/404, Twitter cookie may be expired ==="
+          if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
+            echo "::error::Twitter cookie appears to be expired or invalid (HTTP $HTTP_CODE). Update the TWITTER_COOKIE secret."
+            exit 1
+          elif [ "$HTTP_CODE" != "200" ]; then
+            echo "::warning::Unexpected HTTP status $HTTP_CODE from RSSHub. May or may not be a cookie issue, check logs above."
+          else
+            echo "Twitter cookie looks valid."
+          fi
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -139,7 +151,10 @@ jobs:
             git config --local user.name "GitHub Actions Bot"
             git add data/state.json
             git commit -m "chore: update tweet state" || echo "No state changes"
-            git push || echo "Push failed, will retry next run"
+            if ! git push; then
+              echo "::error::Failed to push updated state.json — next run may re-send duplicate tweets."
+              exit 1
+            fi
           else
             echo "No state file created"
           fi
