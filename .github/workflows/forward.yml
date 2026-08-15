@@ -1,0 +1,106 @@
+name: X to DingTalk
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: forwarder
+  cancel-in-progress: false
+
+jobs:
+  forward:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start RSSHub
+        env:
+          TWITTER_COOKIE: ${{ secrets.TWITTER_COOKIE }}
+        run: |
+          docker run -d --name rsshub \
+            -e TWITTER_COOKIE="$TWITTER_COOKIE" \
+            -p 1200:1200 \
+            diygod/rsshub:latest
+
+      - name: Wait for RSSHub
+        run: |
+          echo "Waiting for RSSHub to start..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:1200/healthz > /dev/null 2>&1; then
+              echo "RSSHub is ready (attempt $i)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "RSSHub failed to start, logs:"
+          docker logs rsshub
+          exit 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create config
+        env:
+          DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+          DINGTALK_KEYWORD: ${{ secrets.DINGTALK_KEYWORD }}
+          TWITTER_ACCOUNTS: ${{ secrets.TWITTER_ACCOUNTS }}
+        run: |
+          mkdir -p data
+          DINGTALK_WEBHOOK="$DINGTALK_WEBHOOK" \
+          DINGTALK_KEYWORD="$DINGTALK_KEYWORD" \
+          TWITTER_ACCOUNTS="$TWITTER_ACCOUNTS" \
+          python -c "
+          import json, os
+          config = {
+              'rsshub_url': 'http://localhost:1200',
+              'accounts': [a.strip() for a in os.environ['TWITTER_ACCOUNTS'].split(',') if a.strip()],
+              'dingtalk': {
+                  'webhook': os.environ['DINGTALK_WEBHOOK'],
+                  'secret': '',
+                  'keyword': os.environ['DINGTALK_KEYWORD']
+              },
+              'poll_interval_minutes': 5,
+              'send_on_first_run': False,
+              'state_file': 'data/state.json',
+              'max_state_entries': 200,
+              'message_type': 'markdown',
+              'proxy': ''
+          }
+          with open('config.json', 'w') as f:
+              json.dump(config, f, indent=2, ensure_ascii=False)
+          print('config.json created')
+          "
+
+      - name: Run forwarder
+        run: python main.py --once
+
+      - name: Save state
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f data/state.json ]; then
+            git config --local user.email "actions@github.com"
+            git config --local user.name "GitHub Actions Bot"
+            git add data/state.json
+            git commit -m "chore: update tweet state" || echo "No state changes"
+            git push || echo "Push failed, will retry next run"
+          else
+            echo "No state file created"
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: docker stop rsshub 2>/dev/null || true
