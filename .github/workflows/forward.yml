@@ -22,14 +22,14 @@ jobs:
 
       - name: Check secrets
         env:
-          TWITTER_COOKIE: ${{ secrets.TWITTER_COOKIE }}
+          TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
           DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
           DINGTALK_KEYWORD: ${{ secrets.DINGTALK_KEYWORD }}
           TWITTER_ACCOUNTS: ${{ secrets.TWITTER_ACCOUNTS }}
         run: |
           echo "Checking secrets..."
           MISSING=0
-          [ -n "$TWITTER_COOKIE" ] && echo "TWITTER_COOKIE: OK" || { echo "::error::TWITTER_COOKIE is MISSING!"; MISSING=1; }
+          [ -n "$TWITTER_AUTH_TOKEN" ] && echo "TWITTER_AUTH_TOKEN: OK" || { echo "::error::TWITTER_AUTH_TOKEN is MISSING!"; MISSING=1; }
           [ -n "$DINGTALK_WEBHOOK" ] && echo "DINGTALK_WEBHOOK: OK" || { echo "::error::DINGTALK_WEBHOOK is MISSING!"; MISSING=1; }
           [ -n "$DINGTALK_KEYWORD" ] && echo "DINGTALK_KEYWORD: OK" || { echo "::error::DINGTALK_KEYWORD is MISSING!"; MISSING=1; }
           [ -n "$TWITTER_ACCOUNTS" ] && echo "TWITTER_ACCOUNTS: OK ($TWITTER_ACCOUNTS)" || { echo "::error::TWITTER_ACCOUNTS is MISSING!"; MISSING=1; }
@@ -50,11 +50,11 @@ jobs:
 
       - name: Start RSSHub
         env:
-          TWITTER_COOKIE: ${{ secrets.TWITTER_COOKIE }}
+          TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
         run: |
           docker run -d --name rsshub \
             --network rss-net \
-            -e TWITTER_COOKIE="$TWITTER_COOKIE" \
+            -e TWITTER_AUTH_TOKEN="$TWITTER_AUTH_TOKEN" \
             -e PUPPETEER_WS_ENDPOINT=ws://browserless:3000 \
             -p 1200:1200 \
             diygod/rsshub:latest
@@ -91,12 +91,12 @@ jobs:
           echo "=== RSSHub container logs (post-request) ==="
           docker logs rsshub 2>&1 | tail -60
           if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
-            echo "::error::Twitter cookie appears to be expired or invalid (HTTP $HTTP_CODE). Update the TWITTER_COOKIE secret."
+            echo "::error::Twitter auth_token appears to be expired or invalid (HTTP $HTTP_CODE). Update the TWITTER_AUTH_TOKEN secret."
             exit 1
           elif [ "$HTTP_CODE" != "200" ]; then
-            echo "::warning::Unexpected HTTP status $HTTP_CODE from RSSHub. May or may not be a cookie issue, check logs above."
+            echo "::warning::Unexpected HTTP status $HTTP_CODE from RSSHub. May or may not be an auth_token issue, check logs above."
           else
-            echo "Twitter cookie looks valid."
+            echo "Twitter auth_token looks valid."
           fi
 
       - name: Setup Python
