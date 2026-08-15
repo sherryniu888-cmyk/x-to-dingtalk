@@ -118,7 +118,7 @@ jobs:
           fi
 
       - name: Cleanup
-        if: always
+        if: always()
         run: |
           docker stop rsshub 2>/dev/null || true
           docker stop browserless 2>/dev/null || true
