@@ -73,7 +73,7 @@ jobs:
                   'keyword': os.environ['DINGTALK_KEYWORD']
               },
               'poll_interval_minutes': 5,
-              'send_on_first_run': False,
+              'send_on_first_run': True,
               'state_file': 'data/state.json',
               'max_state_entries': 200,
               'message_type': 'markdown',
