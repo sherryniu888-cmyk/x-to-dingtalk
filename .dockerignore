@@ -1,0 +1,8 @@
+.git
+.env
+config.json
+config.production.json
+data/
+__pycache__/
+*.pyc
+deploy.sh
