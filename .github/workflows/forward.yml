@@ -1,9 +1,11 @@
 name: X to DingTalk
 
 on:
-  schedule:
-    - cron: '*/10 * * * *'
+  # 主触发: 外部定时器每 5 分钟调用 API 触发，不受 schedule 排队影响
   workflow_dispatch:
+  # 兜底触发: 避开整点高峰，每 30 分钟一次
+  schedule:
+    - cron: '7,37 * * * *'
 
 permissions:
   contents: write
@@ -153,6 +155,8 @@ jobs:
             git config --local user.name "GitHub Actions Bot"
             git add data/state.json
             git commit -m "chore: update tweet state" || echo "No state changes"
+            # 新增：先同步远端，避免推送冲突
+            git pull --rebase --autostash || true
             if ! git push; then
               echo "::error::Failed to push updated state.json — next run may re-send duplicate tweets."
               exit 1
